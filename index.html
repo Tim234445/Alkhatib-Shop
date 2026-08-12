@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>كاشير - الخطيب للكهرباء</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* تنسيق مخصص للطباعة الحرارية مقاس 5.8 سم (58mm) */
+        @media print {
+            body * { 
+                visibility: hidden !important; 
+            }
+            #printable-receipt, #printable-receipt * { 
+                visibility: visible !important; 
+            }
+            #printable-receipt { 
+                position: absolute !important; 
+                left: 0 !important; 
+                top: 0 !important; 
+                width: 58mm !important; 
+                padding: 2mm !important;
+                margin: 0 !important;
+                font-family: 'Courier New', Courier, monospace !important; 
+                color: black !important;
+                background: white !important;
+            }
+            @page {
+                size: 58mm auto;
+                margin: 0;
+            }
+            .no-print { 
+                display: none !important; 
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header / الترويسة -->
+    <header class="bg-blue-900 text-white p-4 shadow-md flex flex-wrap justify-between items-center gap-2 no-print">
+        <div>
+            <h1 class="text-xl md:text-2xl font-bold">⚡ الخطيب للكهرباء</h1>
+            <p class="text-xs text-blue-200">دمشق - أسد الدين - جسر النحاس - مقابل جامع حموليلا | هاتف: 2762484</p>
+        </div>
+        
+        <!-- حقل سعر الصرف -->
+        <div class="bg-blue-800 p-2 rounded-lg flex items-center gap-2 border border-blue-700">
+            <span class="text-sm font-semibold text-yellow-300">سعر صرف $ اليوم:</span>
+            <input type="number" id="exchangeRate" value="130" onchange="updateExchangeRate()" class="w-24 p-1 text-center font-bold text-gray-900 rounded bg-white text-sm focus:outline-none">
+            <span class="text-xs text-blue-200">ل.س</span>
+        </div>
+    </header>
+
+    <!-- Container -->
+    <div class="flex-1 max-w-7xl w-full mx-auto p-2 sm:p-4 grid grid-cols-1 md:grid-cols-3 gap-4 no-print">
+        
+        <!-- القسم الأيمن: الفاتورة -->
+        <div class="md:col-span-2 bg-white rounded-xl shadow p-4 flex flex-col justify-between">
+            <div>
+                <div class="mb-4 flex gap-2">
+                    <input type="text" id="barcodeInput" placeholder="امسح الباركود أو ابحث عن القطعة..." onkeypress="handleBarcode(event)" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-lg">
+                    <button onclick="searchBarcodeManual()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold">إضافة</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-right border-collapse text-sm sm:text-base">
+                        <thead>
+                            <tr class="bg-gray-100 border-b">
+                                <th class="p-2">القطعة</th>
+                                <th class="p-2 text-center">الكمية</th>
+                                <th class="p-2">السعر (ل.س)</th>
+                                <th class="p-2">المجموع (ل.س)</th>
+                                <th class="p-2 text-center">حذف</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartTable"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="border-t pt-4 mt-4">
+                <div class="flex justify-between items-center mb-4 bg-gray-50 p-3 rounded-lg border">
+                    <span class="text-lg font-bold">الإجمالي النهائي:</span>
+                    <div class="text-left">
+                        <span id="totalUSD" class="block text-sm text-gray-500 font-bold">$0.00</span>
+                        <span id="totalSYP" class="text-2xl font-black text-green-700">0 ل.س</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="checkoutAndPrint()" class="flex-1 bg-green-600 text-white py-3 rounded-xl font-bold text-lg hover:bg-green-700 shadow-lg">إتمام البيع وطباعة الفاتورة 🖨️</button>
+                    <button onclick="clearCart()" class="bg-red-100 text-red-600 px-4 py-3 rounded-xl font-semibold hover:bg-red-200">إلغاء</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- القسم الأيسر: إدارة البضائع والكميات -->
+        <div class="bg-white rounded-xl shadow p-4 flex flex-col justify-between space-y-4">
+            <div>
+                <h2 class="text-lg font-bold mb-3 border-b pb-2 text-blue-900">📦 إضافة / تعديل بضاعة</h2>
+                
+                <form id="productForm" onsubmit="saveProduct(event)" class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">رمز الباركود:</label>
+                        <input type="text" id="pBarcode" required class="w-full p-2 border rounded text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">اسم القطعة:</label>
+                        <input type="text" id="pName" required class="w-full p-2 border rounded text-sm">
+                    </div>
+                    
+                    <!-- أسعار الشراء/التكلفة -->
+                    <div class="p-2 bg-red-50 rounded-lg border border-red-100 space-y-2">
+                        <span class="block text-xs font-bold text-red-700">سعر الشراء (التكلفة عليك):</span>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] text-gray-600">بالدولار ($):</label>
+                                <input type="number" step="0.01" id="pCostUSD" oninput="syncCostFromUSD()" class="w-full p-1.5 border rounded text-sm bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-gray-600">بالسوري (ل.س):</label>
+                                <input type="number" step="1" id="pCostSYP" oninput="syncCostFromSYP()" class="w-full p-1.5 border rounded text-sm bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- أسعار البيع للزبون -->
+                    <div class="p-2 bg-green-50 rounded-lg border border-green-100 space-y-2">
+                        <span class="block text-xs font-bold text-green-700">سعر البيع (للزبون):</span>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] text-gray-600">بالدولار ($):</label>
+                                <input type="number" step="0.01" id="pPriceUSD" oninput="syncPriceFromUSD()" class="w-full p-1.5 border rounded text-sm bg-white">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] text-gray-600">بالسوري (ل.س):</label>
+                                <input type="number" step="1" id="pPriceSYP" oninput="syncPriceFromSYP()" class="w-full p-1.5 border rounded text-sm bg-white">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">الكمية المتوفرة:</label>
+                            <input type="number" id="pStock" required min="1" value="10" class="w-full p-2 border rounded text-sm bg-yellow-50 font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">تاريخ الشراء:</label>
+                            <input type="date" id="pDate" required class="w-full p-2 border rounded text-sm">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="w-full bg-blue-900 text-white py-2 rounded-lg font-semibold hover:bg-blue-800 text-sm">حفظ القطعة بالمخزن</button>
+                </form>
+            </div>
+
+            <div class="border-t pt-3 space-y-2">
+                <h3 class="text-sm font-bold text-gray-700">💾 النسخ الاحتياطي</h3>
+                <div class="flex gap-2">
+                    <button onclick="exportBackup()" class="flex-1 bg-gray-100 border text-gray-700 text-xs py-2 rounded font-semibold hover:bg-gray-200">تنزيل نسخة (JSON)</button>
+                    <label class="flex-1 bg-gray-100 border text-gray-700 text-xs py-2 rounded font-semibold text-center cursor-pointer hover:bg-gray-200">
+                        استعادة نسخة
+                        <input type="file" onchange="importBackup(event)" class="hidden" accept=".json">
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- الفاتورة المصممة خصيصاً للطباعة الحرارية مقاس 5.8 سم -->
+    <div id="printable-receipt" class="hidden">
+        <div style="text-align: center; width: 100%;">
+            <strong style="font-size: 14px;">الخطيب للكهرباء</strong><br>
+            <span style="font-size: 9px;">دمشق - أسد الدين - جسر النحاس</span><br>
+            <span style="font-size: 9px;">مقابل جامع حموليلا | هاتف: 2762484</span><br>
+            <span style="font-size: 8px;">التاريخ: <span id="rDate"></span></span>
+            <div style="border-bottom: 1px dashed black; margin: 4px 0;"></div>
+        </div>
+
+        <table style="width: 100%; font-size: 10px; text-align: right; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 1px solid black;">
+                    <th style="padding: 2px 0;">المادة</th>
+                    <th style="padding: 2px 0; text-align: center;">العدد</th>
+                    <th style="padding: 2px 0;">السعر</th>
+                    <th style="padding: 2px 0;">المجموع</th>
+                </tr>
+            </thead>
+            <tbody id="rItems"></tbody>
+        </table>
+
+        <div style="border-bottom: 1px dashed black; margin: 4px 0;"></div>
+        
+        <div style="text-align: left; font-weight: bold; font-size: 11px;">
+            المبلغ الإجمالي: <span id="rTotal"></span> ل.س
+        </div>
+
+        <div style="text-align: center; margin-top: 8px; font-size: 10px; font-weight: bold;">
+            شكراً لزيارتكم الكريمة!
+        </div>
+    </div>
+
+    <script>
+        let exchangeRate = parseFloat(localStorage.getItem('pos_rate')) || 130;
+        let products = JSON.parse(localStorage.getItem('pos_products')) || [
+            { barcode: "101", name: "قاطع 32A ثلاثي", costUSD: 8.0, priceUSD: 12.0, stock: 5, date: "2026-08-01" },
+            { barcode: "102", name: "سلك 2.5 ملم", costUSD: 0.5, priceUSD: 0.8, stock: 20, date: "2026-08-05" }
+        ];
+        let cart = [];
+
+        document.getElementById('exchangeRate').value = exchangeRate;
+
+        function saveProductsToStorage() {
+            localStorage.setItem('pos_products', JSON.stringify(products));
+        }
+
+        function updateExchangeRate() {
+            exchangeRate = parseFloat(document.getElementById('exchangeRate').value) || 130;
+            localStorage.setItem('pos_rate', exchangeRate);
+            renderCart();
+        }
+
+        // --- مزامنة أسعار الشراء (التكلفة) ---
+        function syncCostFromUSD() {
+            const usd = parseFloat(document.getElementById('pCostUSD').value) || 0;
+            document.getElementById('pCostSYP').value = Math.round(usd * exchangeRate);
+        }
+        function syncCostFromSYP() {
+            const syp = parseFloat(document.getElementById('pCostSYP').value) || 0;
+            document.getElementById('pCostUSD').value = (syp / exchangeRate).toFixed(2);
+        }
+
+        // --- مزامنة أسعار البيع (للزبون) ---
+        function syncPriceFromUSD() {
+            const usd = parseFloat(document.getElementById('pPriceUSD').value) || 0;
+            document.getElementById('pPriceSYP').value = Math.round(usd * exchangeRate);
+        }
+        function syncPriceFromSYP() {
+            const syp = parseFloat(document.getElementById('pPriceSYP').value) || 0;
+            document.getElementById('pPriceUSD').value = (syp / exchangeRate).toFixed(2);
+        }
+
+        function handleBarcode(e) {
+            if (e.key === 'Enter') searchBarcodeManual();
+        }
+
+        function searchBarcodeManual() {
+            const code = document.getElementById('barcodeInput').value.trim();
+            if (!code) return;
+
+            const product = products.find(p => p.barcode === code || p.name.includes(code));
+            if (product) {
+                addToCart(product);
+                document.getElementById('barcodeInput').value = '';
+            } else {
+                alert('القطعة غير موجودة في المخزن!');
+            }
+        }
+
+        function addToCart(product) {
+            const cartItem = cart.find(item => item.barcode === product.barcode);
+            const currentQtyInCart = cartItem ? cartItem.qty : 0;
+
+            if (currentQtyInCart + 1 > product.stock) {
+                alert(`⚠️ تنبيه: الكمية المتوفرة بالمحل من (${product.name}) هي [${product.stock}] فقط!`);
+                return;
+            }
+
+            if (cartItem) {
+                cartItem.qty++;
+            } else {
+                cart.push({ ...product, qty: 1 });
+            }
+            renderCart();
+        }
+
+        function renderCart() {
+            const tbody = document.getElementById('cartTable');
+            tbody.innerHTML = '';
+            let totalUSD = 0;
+
+            cart.forEach((item, index) => {
+                const priceSYP = item.priceUSD * exchangeRate;
+                const totalSYP = priceSYP * item.qty;
+                totalUSD += item.priceUSD * item.qty;
+
+                tbody.innerHTML += `
+                    <tr class="border-b">
+                        <td class="p-2 font-semibold">${item.name}</td>
+                        <td class="p-2 text-center">
+                            <input type="number" value="${item.qty}" min="1" max="${item.stock}" onchange="updateQty(${index}, this.value)" class="w-12 text-center border rounded">
+                        </td>
+                        <td class="p-2">${Math.round(priceSYP).toLocaleString()}</td>
+                        <td class="p-2 font-bold text-green-700">${Math.round(totalSYP).toLocaleString()}</td>
+                        <td class="p-2 text-center">
+                            <button onclick="removeFromCart(${index})" class="text-red-500 font-bold hover:text-red-700">✕</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            const finalSYP = totalUSD * exchangeRate;
+            document.getElementById('totalUSD').innerText = `$${totalUSD.toFixed(2)}`;
+            document.getElementById('totalSYP').innerText = `${Math.round(finalSYP).toLocaleString()} ل.س`;
+        }
+
+        function updateQty(index, qty) {
+            const parsedQty = parseInt(qty) || 1;
+            if (parsedQty > cart[index].stock) {
+                alert(`⚠️ الكمية المتوفرة في المخزن هي (${cart[index].stock}) فقط!`);
+                renderCart();
+                return;
+            }
+            cart[index].qty = parsedQty;
+            renderCart();
+        }
+
+        function removeFromCart(index) {
+            cart.splice(index, 1);
+            renderCart();
+        }
+
+        function clearCart() {
+            cart = [];
+            renderCart();
+        }
+
+        function saveProduct(e) {
+            e.preventDefault();
+            const barcode = document.getElementById('pBarcode').value.trim();
+            const name = document.getElementById('pName').value.trim();
+            const costUSD = parseFloat(document.getElementById('pCostUSD').value) || 0;
+            const priceUSD = parseFloat(document.getElementById('pPriceUSD').value) || 0;
+            const stock = parseInt(document.getElementById('pStock').value) || 0;
+            const date = document.getElementById('pDate').value;
+
+            const existingIndex = products.findIndex(p => p.barcode === barcode);
+            if (existingIndex > -1) {
+                products[existingIndex] = { barcode, name, costUSD, priceUSD, stock, date };
+            } else {
+                products.push({ barcode, name, costUSD, priceUSD, stock, date });
+            }
+
+            saveProductsToStorage();
+            alert('تم حفظ القطعة بجميع بياناتها بنجاح!');
+            document.getElementById('productForm').reset();
+        }
+
+        function checkoutAndPrint() {
+            if (cart.length === 0) {
+                alert('الفاتورة فارغة!');
+                return;
+            }
+
+            document.getElementById('rDate').innerText = new Date().toLocaleDateString('ar-SY');
+            
+            const rItems = document.getElementById('rItems');
+            rItems.innerHTML = '';
+            let grandTotalSYP = 0;
+            let lowStockAlerts = [];
+
+            cart.forEach(item => {
+                const priceSYP = Math.round(item.priceUSD * exchangeRate);
+                const totalSYP = priceSYP * item.qty;
+                grandTotalSYP += totalSYP;
+
+                rItems.innerHTML += `
+                    <tr>
+                        <td style="padding: 2px 0;">${item.name}</td>
+                        <td style="padding: 2px 0; text-align:center;">${item.qty}</td>
+                        <td style="padding: 2px 0;">${priceSYP.toLocaleString()}</td>
+                        <td style="padding: 2px 0;">${totalSYP.toLocaleString()}</td>
+                    </tr>
+                `;
+
+                const prod = products.find(p => p.barcode === item.barcode);
+                if (prod) {
+                    prod.stock -= item.qty;
+                    if (prod.stock <= 1) {
+                        lowStockAlerts.push(`⚠️ تنبيه: المادة (${prod.name}) تبقى منها [${prod.stock}] فقط!`);
+                    }
+                }
+            });
+
+            document.getElementById('rTotal').innerText = grandTotalSYP.toLocaleString();
+
+            saveProductsToStorage();
+
+            const printArea = document.getElementById('printable-receipt');
+            printArea.classList.remove('hidden');
+            window.print();
+            printArea.classList.add('hidden');
+
+            if (lowStockAlerts.length > 0) {
+                setTimeout(() => {
+                    alert(lowStockAlerts.join('\n\n'));
+                }, 500);
+            }
+
+            clearCart();
+        }
+
+        function exportBackup() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(products));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `backup_pos_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function importBackup(e) {
+            const fileReader = new FileReader();
+            fileReader.onload = function (event) {
+                try {
+                    products = JSON.parse(event.target.result);
+                    saveProductsToStorage();
+                    alert('تمت استعادة البيانات بنجاح!');
+                } catch (err) {
+                    alert('ملف غير صالح.');
+                }
+            };
+            fileReader.readAsText(e.target.files[0]);
+        }
+    </script>
+</body>
+</html>
